@@ -5,27 +5,24 @@ var Game = function(engine, renderer) {
   this.tickLength = 100;
   
   this.renderer.render();
+  
   this.renderer.attachEventHandler("cellClick", (function(game) {
-      return function(x, y, renderer, engine, e) {
-        if(engine.emptyCell(x, y) && selectedMaterial && selectedMaterial !== Materials.NONE) {
-          
-          var particle;
-          if(selectedMaterial === Materials.SAND) {
-            particle = new SandParticle(x, y);
-          }
-          if(selectedMaterial === Materials.WATER) {
-            particle = new WaterParticle(x, y);
-          }
-          else {
-            particle = new Particle(selectedMaterial, x, y);
-          }
-          
-          engine.addParticle(particle);
-          if(!game.isRunning()) {
-            renderer.render();
-          }
+    return function(x, y, renderer, engine, e) {
+      if((!selectedMaterial || selectedMaterial === Materials.NONE) && !engine.emptyCell(x, y)) {
+        var particle = engine.world[x][y];
+        engine.deleteParticle(particle);
+        if(!game.isRunning()) {
+          renderer.render();
         }
-      };
+      }
+      if(selectedMaterial && selectedMaterial !== Materials.NONE && engine.emptyCell(x, y)) {
+        var particle = new Particle(selectedMaterial, x, y);
+        engine.addParticle(particle);
+        if(!game.isRunning()) {
+          renderer.render();
+        }
+      }
+    };
   })(this));
   
   this.tick = function() {
@@ -52,10 +49,14 @@ var Game = function(engine, renderer) {
     }
   };
   
-  this.stop = this.reset = function() {
+  this.stop = function() {
     this.pause();
     this.engine.reset();
     this.renderer.render();
+  };
+  
+  this.reset = function() {
+    this.engine.reset();
   };
   
   this.isRunning = function() {
@@ -68,18 +69,32 @@ var Game = function(engine, renderer) {
 var Materials = {
   NONE: {
     name: "None",
-    colour: "#f8f8f8",
+    colour: "#ffffff",
     valueOf: function() { return 0; }
   },
   SAND: {
     name: "Sand",
-    colour: "#d0c000",
+    colour: "#f0e000",
+    fluidity: 1,
     valueOf: function() { return 1; }
   },
   WATER: {
     name: "Water",
     colour: "#0080ff",
+    fluidity: Infinity,
     valueOf: function() { return 2; }
+  },
+  SLIME: {
+    name: "Slime",
+    colour: "#00ff00",
+    fluidity: 0.01,
+    valueOf: function() { return 3; }
+  },
+  CLAY: {
+    name: "Clay",
+    colour: "#d06000",
+    fluidity: 0,
+    valueOf: function() { return 4; }
   },
   get: function(i) {
     for(property in this) {
@@ -122,9 +137,9 @@ var ParticleEngine = function(w, h) {
     }
     
     this.particles = [];
-    for(var i=0; i<20; i++) {
+    /*for(var i=0; i<20; i++) {
       this.particles.push(this.world[10][i] = new Particle(Materials.SAND, 10, i));
-    }
+    }*/
   };
   this.reset();
   
@@ -159,7 +174,16 @@ var ParticleEngine = function(w, h) {
       this.world[p.x][p.y] = p;
     }
     return false;
-  }
+  };
+  
+  this.deleteParticle = function(p) {
+    for(var i=0; i<this.particles.length; i++) {
+      if(this.particles[i] === p) {
+        this.particles.splice(i, 0);
+        this.world[p.x][p.y] = null;
+      }
+    }
+  };
   
   this.moveParticleTo = function(p, x, y) {
     this.world[p.x][p.y] = null;
@@ -198,7 +222,7 @@ var ParticleEngine = function(w, h) {
     this.moveParticleTo(p, loopX, loopY);
     
     return (loopX == targetX && loopY == targetY);
-  }
+  };
   
   this.emptyCell = function(x, y) {
     if(x < 0 || y < 0 || x >= this.width || y >= this.height) { // Check edges of world
@@ -226,36 +250,7 @@ var Particle = function(material, x, y) {
   this.dx = 0;
   this.dy = 0;
   
-  this.adjustPosition = function(engine) {  // Default implementation.  No stacking, 45 degree piles
-    if(!engine.emptyCell(this.x, this.y+1)) {
-      var emptyLeft = engine.emptyCell(this.x-1, this.y+1);
-      var emptyRight = engine.emptyCell(this.x+1, this.y+1);
-      
-      if(emptyLeft && emptyRight) {
-        var dir = Math.round(Math.random(), 0) == 1 ? 1 : -1;
-        engine.moveParticleTo(this, this.x+dir, this.y+1);
-      }
-      else if(emptyLeft) {
-        engine.moveParticleTo(this, this.x-1, this.y+1);
-      }
-      else if(emptyRight) {
-        engine.moveParticleTo(this, this.x+1, this.y+1);
-      }
-    }
-  };
-}
-
-var SandParticle = function(x, y) {
-  Particle.call(this, Materials.SAND, x, y);
-}
-SandParticle.prototype = Object.create(Particle.prototype);
-SandParticle.prototype.constructor = SandParticle;
-
-
-var WaterParticle = function(x, y) {
-  Particle.call(this, Materials.WATER, x, y);
-  
-  this.adjustPosition = function(engine) {  // Water implementation.  No stacking, infinitely wide piles
+  this.adjustPosition = function(engine) {
     if(!engine.emptyCell(this.x, this.y+1)) {
       
       var checkingLeft = true;
@@ -268,7 +263,12 @@ var WaterParticle = function(x, y) {
       var passedEdgeRight = false;
       
       // Start at the particle position and work outwards left and right one cell at a time, looking for the first hole(s) in the next row down
-      for(var distance = 1; checkingLeft || checkingRight; distance++) {
+      for(var distance = 0;
+        (
+          distance <= this.material.fluidity ||
+          (this.material.fluidity < 1 && Math.random() < this.material.fluidity)
+        )
+        && (checkingLeft || checkingRight); distance++) {
         
         var emptyLeft = engine.emptyCell(this.x-distance, this.y+1);
         var emptyRight = engine.emptyCell(this.x+distance, this.y+1);
@@ -298,10 +298,10 @@ var WaterParticle = function(x, y) {
         }
         
         // 2. A non-empty cell on the same level as the current particle (ie, the edge of any "container" the water's dropped into)
-        if(!engine.emptyCell(this.x-distance, this.y)) {
+        if(distance > 0 && !engine.emptyCell(this.x-distance, this.y)) {
           checkingLeft = false;
         }
-        if(!engine.emptyCell(this.x+distance, this.y)) {
+        if(distance > 0 && !engine.emptyCell(this.x+distance, this.y)) {
           checkingRight = false;
         }
 
@@ -339,8 +339,6 @@ var WaterParticle = function(x, y) {
     }
   };
 }
-WaterParticle.prototype = Object.create(Particle.prototype);
-WaterParticle.prototype.constructor = WaterParticle;
 
 var CanvasRenderer = function(engine, id) {
   

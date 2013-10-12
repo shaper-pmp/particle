@@ -13,9 +13,8 @@
         var renderer = new CanvasRenderer(engine, "map");
         game = new Game(engine, renderer);
         
-        // Set up UI
+        // Set up materials UI
         var matsSelect = document.getElementById("materialtypes");
-        
         for(var i=0; i<Materials.length; i++) {
           var opt = document.createElement("option");
           var material = Materials.get(i);
@@ -24,10 +23,11 @@
           opt.style.backgroundColor = material.colour;
           matsSelect.add(opt);
         }
-        
         matsSelect.onchange = function() {
           selectedMaterial = Materials.get(Number(this.options[this.selectedIndex].value));
         };
+        
+        game.start();
       }
       
     </script>
