@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>particle.js</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <script type="text/javascript" src="particle.js"></script>
+    <script type="text/javascript">
+      var game, selectedMaterial;
+      function init() {
+        // Set up game world (engine and renderer)
+        var engine = new ParticleEngine(100, 50);
+        var renderer = new CanvasRenderer(engine, "map");
+        game = new Game(engine, renderer);
+        
+        // Set up UI
+        var matsSelect = document.getElementById("materialtypes");
+        
+        for(var i=0; i<Materials.length; i++) {
+          var opt = document.createElement("option");
+          var material = Materials.get(i);
+          opt.value=material.valueOf();
+          opt.text = material.name;
+          opt.style.backgroundColor = material.colour;
+          matsSelect.add(opt);
+        }
+        
+        matsSelect.onchange = function() {
+          selectedMaterial = Materials.get(Number(this.options[this.selectedIndex].value));
+        };
+      }
+      
+    </script>
+		<style>
+      canvas {
+        border: 1px solid #0088ff;
+        float:right;
+      }
+		</style>
+	</head>
+	<body onload="init();">
+    <canvas id="map" width="1000" height="500"></canvas>
+    <div class="">
+      <button onclick="game.start();">Start</button><br />
+      <button onclick="game.pause();">Pause</button><br />
+      <button onclick="game.reset();">Reset</button><br />
+      <select id="materialtypes"></select>
+    </div>
+  </body>
+</html>
