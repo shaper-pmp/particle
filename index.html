@@ -41,11 +41,22 @@
 	<body onload="init();">
     <canvas id="map" width="1000" height="500"></canvas>
     <div class="">
-      <button onclick="game.start();">Start</button><br />
-      <button onclick="game.pause();">Pause</button><br />
-      <button onclick="game.reset();">Reset</button><br />
-      <button onclick="game.tick();">Step</button><br />
-      <select id="materialtypes"></select>
+      <p>
+        <label>Sim controls</label><br />
+        <button onclick="game.start();">Start</button><br />
+        <button onclick="game.pause();">Pause</button><br />
+        <button onclick="game.reset();">Reset</button><br />
+        <button onclick="game.tick();">Step</button><br />
+      </p>
+      <p>
+        <label>Editing tools</label><br />
+        <select id="materialtypes"></select><br />
+      </p>
+      <p><hr></p>
+      <p>
+        <label>World code</label><br />
+        <textarea id="output" cols="15" rows="20"></textarea>
+      </p>
     </div>
   </body>
 </html>

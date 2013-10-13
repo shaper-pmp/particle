@@ -25,9 +25,22 @@ var Game = function(engine, renderer) {
     };
   })(this));
   
+  this.renderer.container.addEventListener("worldTick", function(e) {
+    console.log("worldTick", e, e.detail);
+    document.getElementById("output").value = JSON.stringify(e.detail.engine.world);
+  });
+  
   this.tick = function() {
     this.engine.step();
     this.renderer.render();
+    var tickEvent = new CustomEvent('worldTick', {
+      detail: {
+        game: this,
+        renderer: this.renderer,
+        engine: this.engine,
+      }
+    });
+    this.renderer.container.dispatchEvent(tickEvent);
   };
   
   this.start = function() {
@@ -315,7 +328,7 @@ var Particle = function(material, x, y) {
       for(var distance = 0;
         (
           distance <= this.material.fluidity ||
-          (Math.random() < this.material.fluidity)  // Random effect only kicks in for fluidity values < 1
+          (this.material.fluidity < 1 && Math.random() < this.material.fluidity)  // Random effect only kicks in for fluidity values < 1
         )
         && (checkingLeft || checkingRight); distance++) {
         
