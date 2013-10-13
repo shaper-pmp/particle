@@ -76,24 +76,28 @@ var Materials = {
     name: "Sand",
     colour: "#f0e000",
     fluidity: 1,
+    sticky: 0,
     valueOf: function() { return 1; }
   },
   WATER: {
     name: "Water",
     colour: "#0080ff",
     fluidity: Infinity,
+    sticky: 0,
     valueOf: function() { return 2; }
   },
   SLIME: {
     name: "Slime",
     colour: "#00ff00",
     fluidity: 0.01,
+    sticky: 0,
     valueOf: function() { return 3; }
   },
   CLAY: {
     name: "Clay",
     colour: "#d06000",
     fluidity: 0,
+    sticky: 2,
     valueOf: function() { return 4; }
   },
   get: function(i) {
@@ -127,6 +131,10 @@ var ParticleEngine = function(w, h) {
   this.world = [];
   this.particles = [];
   
+  this.HORIZONTAL = 1;
+  this.VERTICAL = 2;
+  this.BOTH = 3;
+  
   this.reset = function() {
     this.world = [];
     for (var i = 0; i < w; i++) {
@@ -154,9 +162,36 @@ var ParticleEngine = function(w, h) {
           p.dx += this.gravity.x;
           p.dy += this.gravity.y;
           
+          // Check for stickiness, and only move particle if not adjacent to any others or adjacent and dx/dy > stickiness
+          if(p.dx != 0) { // If moving horizontally, check stickiness for vertically-adjacent particles
+            var maxSticky = p.material.sticky;
+            var adjacents = this.adjacentParticles(p.x, p.y, this.VERTICAL);  // Find any vertically adjacent particles
+            if(adjacents.length) {
+              for(var loop=0; loop<adjacents.length; loop++) {
+                var minSticky = adjacents[loop].material.sticky < p.material.sticky ? adjacents[loop].material.sticky : p.material.sticky;  // Take the minimum stickiness value between the current particle and each adjacent one (because glue doesn't stick to Teflon)
+                maxSticky = minSticky > maxSticky ? minSticky : maxSticky;  // Then record the *highest* value of each of these comparisons (because running water past clay doesn't unstick it form other clay)
+              }
+              p.dx += (p.dx > 0) ? -maxSticky : maxSticky;
+            }
+          }
+          if(p.dy != 0) { // If moving vertically, check stickiness for horizontally-adjacent particles
+            var maxSticky = 0;
+            var adjacents = this.adjacentParticles(p.x, p.y, this.HORIZONTAL);  // Find any vertically adjacent particles
+            if(adjacents.length) {
+              for(var loop=0; loop<adjacents.length; loop++) {  // Compare stickiness between this particle and each adjacent particle in turn
+                var minSticky = adjacents[loop].material.sticky < p.material.sticky ? adjacents[loop].material.sticky : p.material.sticky;  // Take the minimum stickiness value between the current particle and each adjacent one (because glue doesn't stick to Teflon)
+                maxSticky = minSticky > maxSticky ? minSticky : maxSticky;  // Then record the *highest* value of each of these comparisons (because running water past clay doesn't unstick it form other clay)
+              }
+              p.dy += (p.dy > 0) ? -maxSticky : maxSticky;
+            }
+          }
+          
           // Move particle as far towards new location as possible
+          var oldX = p.x, oldY = p.y;
           if(!this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy)) {
             p.adjustPosition(this);
+            p.dx = (p.x == oldX) ? 0 : p.dx;
+            p.dy = (p.y == oldY) ? 0 : p.dy;
           }
         }
       }
@@ -241,6 +276,26 @@ var ParticleEngine = function(w, h) {
     return this.world[x][y];
   };
   
+  this.adjacentParticles = function(x, y, dir) {
+    dir = dir || this.BOTH;
+    var particles = [];
+    
+    if(dir & this.HORIZONTAL) {
+      var left = this.getCell(x-1,y);
+      var right = this.getCell(x+1,y);
+      if(left) { particles.push(left); }
+      if(right) { particles.push(right); }
+    }
+    if(dir & this.VERTICAL) {
+      var top = this.getCell(x,y-1);
+      var bottom = this.getCell(x,y+1);
+      if(top) { particles.push(top); }
+      if(bottom) { particles.push(bottom); }
+    }
+    
+    return particles;
+  };
+  
 };
 
 var Particle = function(material, x, y) {
@@ -252,21 +307,15 @@ var Particle = function(material, x, y) {
   
   this.adjustPosition = function(engine) {
     if(!engine.emptyCell(this.x, this.y+1)) {
-      
-      var checkingLeft = true;
-      var checkingRight = true;
-      
-      var offsetLeft = 0;
-      var offsetRight = 0;
-      
-      var passedEdgeLeft = false;
-      var passedEdgeRight = false;
+      var checkingLeft = true, checkingRight = true;
+      var offsetLeft = 0, offsetRight = 0;
+      var passedEdgeLeft = false, passedEdgeRight = false;
       
       // Start at the particle position and work outwards left and right one cell at a time, looking for the first hole(s) in the next row down
       for(var distance = 0;
         (
           distance <= this.material.fluidity ||
-          (this.material.fluidity < 1 && Math.random() < this.material.fluidity)
+          (Math.random() < this.material.fluidity)  // Random effect only kicks in for fluidity values < 1
         )
         && (checkingLeft || checkingRight); distance++) {
         
@@ -278,7 +327,7 @@ var Particle = function(material, x, y) {
         // 1. An empty cell on the level below the current one, or
         if(checkingLeft) {
           var p = engine.getCell(this.x-distance, this.y+1);
-          if(p && p.material === Materials.SAND ) { // Change to some sort of generic "solid/liquid" or "material with greater viscosity"
+          if(p && p.material.fluidity < this.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
             passedEdgeLeft = true;
           }
           if(emptyLeft) {
@@ -288,7 +337,7 @@ var Particle = function(material, x, y) {
         }
         if(checkingRight) {
           var p = engine.getCell(this.x+distance, this.y+1);
-          if(p && p.material === Materials.SAND ) { // Change to some sort of generic "solid/liquid" or "material with greater viscosity"
+          if(p && p.material.fluidity < this.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
             passedEdgeRight = true;
           }
           if(emptyRight) {
