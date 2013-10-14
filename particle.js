@@ -13,6 +13,7 @@ var Game = function(engine, renderer) {
         engine.deleteParticle(particle);
         if(!game.isRunning()) {
           renderer.render();
+          game.copyWorldToOutput();
         }
       }
       if(selectedMaterial && selectedMaterial !== Materials.NONE && engine.emptyCell(x, y)) {
@@ -20,15 +21,23 @@ var Game = function(engine, renderer) {
         engine.addParticle(particle);
         if(!game.isRunning()) {
           renderer.render();
+          game.copyWorldToOutput();
         }
       }
     };
   })(this));
   
-  this.renderer.container.addEventListener("worldTick", function(e) {
-    console.log("worldTick", e, e.detail);
-    document.getElementById("output").value = JSON.stringify(e.detail.engine.world);
-  });
+  this.renderer.container.addEventListener("worldTick", (function(game) {
+    return function(e) {
+      game.copyWorldToOutput();
+    };
+  })(this));
+  
+  // Game object methods
+  
+  this.copyWorldToOutput = function() {
+    document.getElementById("output").value = JSON.stringify(this.engine.particles);
+  }
   
   this.tick = function() {
     this.engine.step();
@@ -70,11 +79,39 @@ var Game = function(engine, renderer) {
   
   this.reset = function() {
     this.engine.reset();
+    this.renderer.render();
   };
   
   this.isRunning = function() {
     return this.intervalTimer !== null;
   };
+  
+  this.loadWorld = function(newWorld) {
+    if(typeof newWorld === "string") {
+      newWorld = JSON.parse(newWorld);
+    }
+    
+    if(!newWorld instanceof Array) {
+      alert("Invalid world - must be an Array of Particle objects/hashes");
+      return null;
+    }
+    
+    this.reset();
+    
+    var inflatedParticles = [];
+    for(var i=0; i<newWorld.length; i++) {
+      var p = new Particle(newWorld[i]);
+      inflatedParticles.push(p);
+      this.engine.world[p.x][p.y] = p;
+    }
+    
+    this.engine.particles = inflatedParticles;
+    this.pause();
+    this.renderer.render();
+    this.copyWorldToOutput();
+    
+    return true;
+  }
   
   
 };
@@ -161,6 +198,7 @@ var ParticleEngine = function(w, h) {
     /*for(var i=0; i<20; i++) {
       this.particles.push(this.world[10][i] = new Particle(Materials.SAND, 10, i));
     }*/
+    
   };
   this.reset();
   
@@ -227,8 +265,8 @@ var ParticleEngine = function(w, h) {
   this.deleteParticle = function(p) {
     for(var i=0; i<this.particles.length; i++) {
       if(this.particles[i] === p) {
-        this.particles.splice(i, 0);
         this.world[p.x][p.y] = null;
+        this.particles.splice(i, 1);
       }
     }
   };
@@ -311,12 +349,41 @@ var ParticleEngine = function(w, h) {
   
 };
 
+/**
+ * Particle class/constructor
+ * @example new Particle(Materials.SAND, 100, 50)
+ * @example new Particle(1, 100, 50)  // Material #1 is SAND
+ * @example new Particle("1", 100, 50)
+ * @example new Particle(someOtherParticleObject) // Copy all member values from this Particle (INCLUDING x/y coordinates) or hash
+ * @example new Particle(someOtherParticleObject, 100, 50) // Copy all member values from this particle (overriding position with new x/y coordinates)
+ */
 var Particle = function(material, x, y) {
-  this.material = material || Materials.SAND;
-  this.x = x || 0;
-  this.y = y || 0;
+  
+  // Set up basic details
   this.dx = 0;
   this.dy = 0;
+  
+  /* Treat material param differently, as it may contain:
+   * A material object
+   * A string or number value representing a material's numeric ID, or
+   * A complete Particle object to copy members' values from
+   */
+  if(typeof material === "object" && material.material) { // material is another Particle to copy values from
+    for(property in material) {
+      this[property] = material[property];
+    }
+  }
+  else {  // material is a material object, number or string
+    this.material = material;
+  }
+
+  if(typeof this.material === "string" || typeof this.material === "number") {
+    this.material = Materials.get(Number(this.material));
+  }
+
+  // Finally, allow passed-in x/y values to override any values passed in in a Particle object or hash
+  this.x = x || this.x;
+  this.y = y || this.y;
   
   this.adjustPosition = function(engine) {
     if(!engine.emptyCell(this.x, this.y+1)) {
@@ -392,13 +459,30 @@ var Particle = function(material, x, y) {
       // And now if we've found (and/or chosen) a hole, move the particle into it.
       if(offsetLeft) {
         engine.moveParticleTo(this, this.x-offsetLeft, this.y+1);
-        console.log(this, this.x, "left", offsetLeft, this.x-offsetLeft);
+        //console.log(this, this.x, "left", offsetLeft, this.x-offsetLeft);
       }
       else if(offsetRight) {
         engine.moveParticleTo(this, this.x+offsetRight, this.y+1);
-        console.log(this, this.x, "right", offsetRight, this.x+offsetRight);
+        //console.log(this, this.x, "right", offsetRight, this.x+offsetRight);
       }
     }
+  };
+
+  /**
+   * Serialise a simplified, less-redundant version ofthe Particle object (mterial object converted to Material ID, methods missing, etc) suitable for reinflating by being passed to the Particle constructor
+   */
+  this.toJSON = function() {
+    var simplified = {};
+    for(property in this) {
+      if(property === "material") { // Convert redundant material objects into corresponding numerical ID
+        simplified[property] = this[property].valueOf();
+      }
+      else if(typeof this[property] !== "function") {
+        simplified[property] = this[property];
+      }
+    }
+    
+    return simplified;
   };
 }
 
