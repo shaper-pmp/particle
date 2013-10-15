@@ -287,10 +287,16 @@ var ParticleEngine = function(w, h) {
   };
   
   this.moveParticleTo = function(p, x, y) {
-    this.world[p.x][p.y] = null;
-    this.world[x][y] = p;
-    p.x = x;
-    p.y = y;
+    
+    if(this.emptyCell(x, y)) {      // If moving to empty cell, just move it
+      this.world[p.x][p.y] = null;
+      this.world[x][y] = p;
+      p.x = x;
+      p.y = y;
+    }
+    else if(this.cellContentsIsMovableBy(p.material, x, y)) { // If moving to occupied cell and the particle in this position has a lower density than the one moving into it, swap the positions of particles
+      this.swapParticles(p, this.world[x][y]);
+    }
   };
   
   this.moveParticleToIntersection = function(p, targetX, targetY) {
@@ -333,6 +339,10 @@ var ParticleEngine = function(w, h) {
       return false;
     }
     return true;
+  };
+  
+  this.cellContentsIsMovableBy = function(material, x, y) {
+    return !this.world[x][y] || this.world[x][y].material.density < material.density;
   };
   
   this.getCell = function(x, y) {
@@ -423,8 +433,8 @@ var Particle = function(material, x, y) {
           )
           && (checkingLeft || checkingRight); distance++) {
           
-          var emptyLeft = engine.emptyCell(this.x-distance, this.y+1);
-          var emptyRight = engine.emptyCell(this.x+distance, this.y+1);
+          var emptyLeft = engine.cellContentsIsMovableBy(this.material, this.x-distance, this.y+1);
+          var emptyRight = engine.cellContentsIsMovableBy(this.material, this.x+distance, this.y+1);
           
           // Keep searching in each direction until we hit either:
           
@@ -451,10 +461,10 @@ var Particle = function(material, x, y) {
           }
           
           // 2. A non-empty cell on the same level as the current particle (ie, the edge of any "container" the water's dropped into)
-          if(distance > 0 && !engine.emptyCell(this.x-distance, this.y)) {
+          if(distance > 0 && !engine.cellContentsIsMovableBy(this.material, this.x-distance, this.y)) {
             checkingLeft = false;
           }
-          if(distance > 0 && !engine.emptyCell(this.x+distance, this.y)) {
+          if(distance > 0 && !engine.cellContentsIsMovableBy(this.material, this.x+distance, this.y)) {
             checkingRight = false;
           }
   
