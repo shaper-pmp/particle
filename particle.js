@@ -135,7 +135,7 @@ var Materials = {
     colour: "#0080ff",
     fluidity: Infinity,
     sticky: 0,
-    density: 0.5,
+    density: 0.1,
     valueOf: function() { return 2; }
   },
   SLIME: {
@@ -143,7 +143,7 @@ var Materials = {
     colour: "#00ff00",
     fluidity: 0.01,
     sticky: 0,
-    density: 0.75,
+    density: 0.9,
     valueOf: function() { return 3; }
   },
   CLAY: {
@@ -421,7 +421,7 @@ var Particle = function(material, x, y) {
         return;
       }
       
-      console.log(this, nextParticle);
+      //console.log(this, nextParticle);
       
       // Particle lands on another material of higher density, so flow over it
       if(nextParticle.material.density >= this.material.density) {
@@ -501,7 +501,7 @@ var Particle = function(material, x, y) {
         }
       }
       // Landed on a particle with lower density, so sink through the substance
-      else if(nextParticle.material.density < this.material.density) {
+      else if(nextParticle.material.density < this.material.density && nextParticle.material.fluidity > 0) {
         engine.swapParticles(this, nextParticle);
       }
     }
