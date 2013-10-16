@@ -128,6 +128,7 @@ var Materials = {
     fluidity: 1,
     sticky: 0,
     density: 1,
+    fixed: false,
     valueOf: function() { return 1; }
   },
   WATER: {
@@ -136,6 +137,7 @@ var Materials = {
     fluidity: Infinity,
     sticky: 0,
     density: 0.1,
+    fixed: false,
     valueOf: function() { return 2; }
   },
   SLIME: {
@@ -144,6 +146,7 @@ var Materials = {
     fluidity: 0.01,
     sticky: 0,
     density: 0.9,
+    fixed: false,
     valueOf: function() { return 3; }
   },
   CLAY: {
@@ -152,7 +155,17 @@ var Materials = {
     fluidity: 0,
     sticky: 2,
     density: 1,
+    fixed: false,
     valueOf: function() { return 4; }
+  },
+  CONCRETE: {
+    name: "Concrete",
+    colour: "#c0c0c0",
+    fluidity: 0,
+    sticky: 0,
+    density: 10,
+    fixed: true,
+    valueOf: function() { return 5; }
   },
   get: function(i) {
     for(property in this) {
@@ -212,7 +225,7 @@ var ParticleEngine = function(w, h) {
         
         var p = this.getCell(i, j);
         
-        if(p) {
+        if(p && !p.material.fixed) {
           // Update momentum
           p.dx += this.gravity.x;
           p.dy += this.gravity.y;
@@ -342,7 +355,7 @@ var ParticleEngine = function(w, h) {
   };
   
   this.cellContentsIsMovableBy = function(material, x, y) {
-    return !this.world[x][y] || this.world[x][y].material.density < material.density;
+    return !this.world[x][y] || (this.world[x][y].material.density < material.density && !this.world[x][y].material.fixed);
   };
   
   this.getCell = function(x, y) {
@@ -371,6 +384,91 @@ var ParticleEngine = function(w, h) {
     
     return particles;
   };
+  
+  this.findNextHoleInRow = function(p, startX, startY) {
+    
+    var checkingLeft = true, checkingRight = true;
+    var offsetLeft = 0, offsetRight = 0;
+    var passedEdgeLeft = false, passedEdgeRight = false;
+      
+    // Start at the particle position and work outwards left and right one cell at a time, looking for the first hole(s) in the next row down
+    for(var distance = 0;
+      (
+        distance <= p.material.fluidity ||
+        (p.material.fluidity < 1 && Math.random() < p.material.fluidity)  // Random effect only kicks in for fluidity values < 1
+      )
+      && (checkingLeft || checkingRight); distance++) {
+      
+      var emptyLeft = this.cellContentsIsMovableBy(p.material, startX-distance, startY);
+      var emptyRight = this.cellContentsIsMovableBy(p.material, startX+distance, startY);
+      
+      // Keep searching in each direction until we hit either:
+      
+      // 1. An empty cell on the level below the current one, or
+      if(checkingLeft) {
+        var q = this.getCell(startX-distance, startY);
+        if(q && q.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
+          passedEdgeLeft = true;
+        }
+        if(emptyLeft) {
+          offsetLeft = distance;
+          checkingLeft = false;
+        }
+      }
+      if(checkingRight) {
+        var q = this.getCell(startX+distance, startY);
+        if(q && q.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
+          passedEdgeRight = true;
+        }
+        if(emptyRight) {
+          offsetRight = distance;
+          checkingRight = false;
+        }
+      }
+      
+      // 2. A non-empty cell on the same level as the current particle (ie, the edge of any "container" the water's dropped into)
+      if(distance > 0 && !this.cellContentsIsMovableBy(p.material, startX-distance, p.y)) {
+        checkingLeft = false;
+      }
+      if(distance > 0 && !this.cellContentsIsMovableBy(p.material, startX+distance, p.y)) {
+        checkingRight = false;
+      }
+    }
+    
+    // If we find a hole on both sides, choose one
+    if(offsetLeft && offsetRight) {
+      
+      // Cosmetic hack: if we had to cross over a solid boundary to find one hole but not the other, prefer the hole where we didn't have to cross a solid boundary.  This avoids the "overspilling out of a basin when there's still spaces left in the top row of the basin" issue.
+      if(passedEdgeRight && !passedEdgeLeft) {
+        offsetRight = 0;
+      }
+      else if(passedEdgeLeft && !passedEdgeRight) {
+        offsetLeft = 0;
+      }
+      
+      // Otherwise if both are equally good choices (both in a basin, or both outside of one), randomly choose between them
+      if(Math.round(Math.random(), 0) == 0) {
+        offsetRight = 0;
+      }
+      else {
+        offsetLeft = 0;
+      }
+    }
+    
+    // And now if we've found (and/or chosen) a hole, move the particle into it.
+    if(offsetLeft) {
+      //engine.moveParticleTo(p, startX-offsetLeft, startY);
+      //console.log(p, startX, "left", offsetLeft, startX-offsetLeft);
+      return {x:startX-offsetLeft, y:startY};
+    }
+    else if(offsetRight) {
+      //engine.moveParticleTo(p, startX+offsetRight, startY);
+      //console.log(p, startX, "right", offsetRight, startX+offsetRight);
+      return {x:startX+offsetRight, y:startY};
+    }
+    
+    return null;
+  }
   
 };
 
@@ -412,9 +510,6 @@ var Particle = function(material, x, y) {
   
   this.adjustPosition = function(engine) {
     if(!engine.emptyCell(this.x, this.y+1)) {
-      var checkingLeft = true, checkingRight = true;
-      var offsetLeft = 0, offsetRight = 0;
-      var passedEdgeLeft = false, passedEdgeRight = false;
       
       var nextParticle = engine.getCell(this.x, this.y+1);
       if(!nextParticle) {
@@ -425,80 +520,12 @@ var Particle = function(material, x, y) {
       
       // Particle lands on another material of higher density, so flow over it
       if(nextParticle.material.density >= this.material.density) {
-        // Start at the particle position and work outwards left and right one cell at a time, looking for the first hole(s) in the next row down
-        for(var distance = 0;
-          (
-            distance <= this.material.fluidity ||
-            (this.material.fluidity < 1 && Math.random() < this.material.fluidity)  // Random effect only kicks in for fluidity values < 1
-          )
-          && (checkingLeft || checkingRight); distance++) {
-          
-          var emptyLeft = engine.cellContentsIsMovableBy(this.material, this.x-distance, this.y+1);
-          var emptyRight = engine.cellContentsIsMovableBy(this.material, this.x+distance, this.y+1);
-          
-          // Keep searching in each direction until we hit either:
-          
-          // 1. An empty cell on the level below the current one, or
-          if(checkingLeft) {
-            var p = engine.getCell(this.x-distance, this.y+1);
-            if(p && p.material.fluidity < this.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
-              passedEdgeLeft = true;
-            }
-            if(emptyLeft) {
-              offsetLeft = distance;
-              checkingLeft = false;
-            }
-          }
-          if(checkingRight) {
-            var p = engine.getCell(this.x+distance, this.y+1);
-            if(p && p.material.fluidity < this.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
-              passedEdgeRight = true;
-            }
-            if(emptyRight) {
-              offsetRight = distance;
-              checkingRight = false;
-            }
-          }
-          
-          // 2. A non-empty cell on the same level as the current particle (ie, the edge of any "container" the water's dropped into)
-          if(distance > 0 && !engine.cellContentsIsMovableBy(this.material, this.x-distance, this.y)) {
-            checkingLeft = false;
-          }
-          if(distance > 0 && !engine.cellContentsIsMovableBy(this.material, this.x+distance, this.y)) {
-            checkingRight = false;
-          }
-  
+        
+        var hole = engine.findNextHoleInRow(this, this.x, this.y+1)
+        if(hole) {
+          engine.moveParticleTo(this, hole.x, hole.y);
         }
         
-        // If we find a hole on both sides, choose one
-        if(offsetLeft && offsetRight) {
-          
-          // Cosmetic hack: if we had to cross over a solid boundary to find one hole but not the other, prefer the hole where we didn't have to cross a solid boundary.  This avoids the "overspilling out of a basin when there's still spaces left in the top row of the basin" issue.
-          if(passedEdgeRight && !passedEdgeLeft) {
-            offsetRight = 0;
-          }
-          else if(passedEdgeLeft && !passedEdgeRight) {
-            offsetLeft = 0;
-          }
-          
-          // Otherwise if both are equally good choices (both in a basin, or both outside of one), randomly choose between them
-          if(Math.round(Math.random(), 0) == 0) {
-            offsetRight = 0;
-          }
-          else {
-            offsetLeft = 0;
-          }
-        }
-        
-        // And now if we've found (and/or chosen) a hole, move the particle into it.
-        if(offsetLeft) {
-          engine.moveParticleTo(this, this.x-offsetLeft, this.y+1);
-          //console.log(this, this.x, "left", offsetLeft, this.x-offsetLeft);
-        }
-        else if(offsetRight) {
-          engine.moveParticleTo(this, this.x+offsetRight, this.y+1);
-          //console.log(this, this.x, "right", offsetRight, this.x+offsetRight);
-        }
       }
       // Landed on a particle with lower density, so sink through the substance
       else if(nextParticle.material.density < this.material.density && nextParticle.material.fluidity > 0) {
