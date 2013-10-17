@@ -256,10 +256,23 @@ var ParticleEngine = function(w, h) {
           
           // Move particle as far towards new location as possible
           var oldX = p.x, oldY = p.y;
-          if(!this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy)) {
+          var reachedTarget = this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy)
+          var dx_dir = p.dx == 0 ? 0 : (p.dx/Math.abs(p.dx)); // Convert positive/negative dx and dy values to +/-1
+          var dy_dir = p.dy == 0 ? 0 : (p.dy/Math.abs(p.dy));
+          var q = this.getCell(p.x+dx_dir, p.y+dy_dir); // Particle (if any) in the place we're trying to move into
+          if(p.material.fluidity > 0 && q && p.material.density === q.material.density) {  // Haven't moved, but liquid sitting on liquid of same density
+            // Landed on a particle of the same density, so flow through/into it
+            var hole = this.findNextHoleInRow(p, q.x, q.y, q.y);
+            if(hole) {
+              this.moveParticleTo(p, hole.x, hole.y);
+              p.dx = 0;
+              p.dy = 0;
+            }
+          }
+          else if(!reachedTarget) {  // If not reached destination but have moved, adjust position
             p.adjustPosition(this);
-            p.dx = (p.x == oldX) ? 0 : p.dx;
-            p.dy = (p.y == oldY) ? 0 : p.dy;
+            p.dx = 0;
+            p.dy = 0;
           }
         }
       }
@@ -385,7 +398,7 @@ var ParticleEngine = function(w, h) {
     return particles;
   };
   
-  this.findNextHoleInRow = function(p, startX, startY) {
+  this.findNextHoleInRow = function(p, startX, startY, barrierY) {
     
     var checkingLeft = true, checkingRight = true;
     var offsetLeft = 0, offsetRight = 0;
@@ -405,9 +418,9 @@ var ParticleEngine = function(w, h) {
       // Keep searching in each direction until we hit either:
       
       // 1. An empty cell on the level below the current one, or
+      var leftCell = this.getCell(startX-distance, startY);
       if(checkingLeft) {
-        var q = this.getCell(startX-distance, startY);
-        if(q && q.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
+        if(leftCell && leftCell.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
           passedEdgeLeft = true;
         }
         if(emptyLeft) {
@@ -415,9 +428,9 @@ var ParticleEngine = function(w, h) {
           checkingLeft = false;
         }
       }
+      var rightCell = this.getCell(startX+distance, startY);
       if(checkingRight) {
-        var q = this.getCell(startX+distance, startY);
-        if(q && q.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
+        if(rightCell && rightCell.material.fluidity < p.material.fluidity) { // Any material with lower fluidity can form a basin containing higher-fluidity materials
           passedEdgeRight = true;
         }
         if(emptyRight) {
@@ -427,10 +440,12 @@ var ParticleEngine = function(w, h) {
       }
       
       // 2. A non-empty cell on the same level as the current particle (ie, the edge of any "container" the water's dropped into)
-      if(distance > 0 && !this.cellContentsIsMovableBy(p.material, startX-distance, p.y)) {
+      var leftBarrier = this.getCell(startX-distance, barrierY);
+      if(distance > 0 && leftBarrier && !this.cellContentsIsMovableBy(p.material, leftBarrier.x, leftBarrier.y) && p.material !== leftBarrier.material) {
         checkingLeft = false;
       }
-      if(distance > 0 && !this.cellContentsIsMovableBy(p.material, startX+distance, p.y)) {
+      var rightBarrier = this.getCell(startX+distance, barrierY);
+      if(distance > 0 && rightBarrier && !this.cellContentsIsMovableBy(p.material, rightBarrier.x, rightBarrier.y) && p.material !== rightBarrier.material) {
         checkingRight = false;
       }
     }
@@ -518,14 +533,12 @@ var Particle = function(material, x, y) {
       
       //console.log(this, nextParticle);
       
-      // Particle lands on another material of higher density, so flow over it
+      // Particle lands on another material of higher or equal density, so flow over it
       if(nextParticle.material.density >= this.material.density) {
-        
-        var hole = engine.findNextHoleInRow(this, this.x, this.y+1)
+        var hole = engine.findNextHoleInRow(this, this.x, this.y+1, this.y)
         if(hole) {
           engine.moveParticleTo(this, hole.x, hole.y);
         }
-        
       }
       // Landed on a particle with lower density, so sink through the substance
       else if(nextParticle.material.density < this.material.density && nextParticle.material.fluidity > 0) {
