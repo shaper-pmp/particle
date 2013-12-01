@@ -27,7 +27,7 @@ var Materials = {
     colour: "#00ff00",
     fluidity: 0.01,
     sticky: 0,
-    density: 0.9,
+    density: 1,
     fixed: false,
     valueOf: function() { return 3; }
   },
@@ -36,7 +36,7 @@ var Materials = {
     colour: "#d06000",
     fluidity: 0,
     sticky: 2,
-    density: 1,
+    density: 2,
     fixed: false,
     valueOf: function() { return 4; }
   },

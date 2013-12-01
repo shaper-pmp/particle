@@ -31,8 +31,8 @@ var Particle = function(material, x, y) {
   }
 
   // Finally, allow passed-in x/y values to override any values passed in in a Particle object or hash
-  this.x = x || this.x;
-  this.y = y || this.y;
+  this.x = x >= 0 ? x : this.x;
+  this.y = y >= 0 ? y : this.y;
   
   this.adjustPosition = function(engine) {
     if(!engine.emptyCell(this.x, this.y+1)) {

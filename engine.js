@@ -68,7 +68,7 @@ var ParticleEngine = function(w, h) {
           
           // Move particle as far towards new location as possible
           var oldX = p.x, oldY = p.y;
-          var reachedTarget = this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy)
+          var reachedTarget = this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy);
           var dx_dir = p.dx == 0 ? 0 : (p.dx/Math.abs(p.dx)); // Convert positive/negative dx and dy values to +/-1
           var dy_dir = p.dy == 0 ? 0 : (p.dy/Math.abs(p.dy));
           var q = this.getCell(p.x+dx_dir, p.y+dy_dir); // Particle (if any) in the place we're trying to move into
@@ -77,9 +77,9 @@ var ParticleEngine = function(w, h) {
             var hole = this.findNextHoleInRow(p, q.x, q.y, q.y);
             if(hole) {
               this.moveParticleTo(p, hole.x, hole.y);
-              p.dx = 0;
-              p.dy = 0;
             }
+            p.dx = 0;
+            p.dy = 0;
           }
           else if(!reachedTarget) {  // If not reached destination but have moved, adjust position
             p.adjustPosition(this);
@@ -92,8 +92,8 @@ var ParticleEngine = function(w, h) {
   };
   
   this.addParticle = function(p, x, y) {
-    x = x || p.x;
-    y = y || p.y;
+    x = x >= 0 ? x : p.x;
+    y = y >= 0 ? y : p.y;
     p.x = x;
     p.y = y;
     
@@ -180,7 +180,10 @@ var ParticleEngine = function(w, h) {
   };
   
   this.cellContentsIsMovableBy = function(material, x, y) {
-    return !this.world[x][y] || (this.world[x][y].material.density < material.density && !this.world[x][y].material.fixed);
+    if(x < 0 || y < 0 || x >= this.width || y >= this.height) { // Check edges of world (treat edges as immovable)
+      return false;
+    }
+    return !this.world[x][y] || (this.world[x][y].material.density < material.density && !this.world[x][y].material.fixed);  // Check empty cell or cell occupied by a less-dense, non-fixed material than the current particle
   };
   
   this.getCell = function(x, y) {
