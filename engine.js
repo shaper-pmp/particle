@@ -38,6 +38,66 @@ var ParticleEngine = function(w, h) {
         var p = this.getCell(i, j);
         
         if(p && !p.material.fixed) {
+          // Sum forces acting on particle, and add result to dx & dy
+          
+            // Add active forces:
+            
+              // Gravity
+              p.dx += this.gravity.x;
+              p.dy += this.gravity.y;
+          
+            // NOT SURE ABOUT THIS ONE: If less-dense material beneath, add upward force of (difference in density - fluidity of material above)
+            
+            // If dx or dy > 0, subtract passive forces down as far as 0 (no further - friction can stop you, but it can't make you go back the other way)
+              // *** FRICTION/Stickiness (solids only) ***
+              // Subtract friction/stickiness (calculate lowest friction value of each particle-adjacent particle pair, then choose highest friction value and subtract from dx/dy) - separate calculations for dx and dy, or combine together?
+              var maxStickyForce = this.calculateStickinessForce(p, this.BOTH);
+              if(p.dx > 0)      { p.dx -= Math.min(p.dx, maxStickyForce); }   // If dx positive, apply force the other, way up to maxStickyForce or the particle reaches standstill
+              else if(p.dx < 0) { p.dx += Math.min(-p.dx, maxStickyForce); }  // Ditto if dx negative
+              if(p.dy > 0)      { p.dy -= Math.min(p.dy, maxStickyForce); }   // If dy positive, apply force the other, way up to maxStickyForce or the particle reaches standstill
+              else if(p.dy < 0) { p.dy += Math.min(-p.dy, maxStickyForce); }  // Ditto if dy negative
+              
+              // If particle(s) in dx/dy direction, subtract inverse of fluidity (viscosity)?
+              
+          // Add dx & dy to current position to establish target
+          // Move towards target until target or intersection
+          
+          // Move particle as far towards new location as possible
+          
+          
+          // ***** OLD STEP FUNCTION CODE (temporarily transplanted to test the force-resolution code above) *****
+          var oldX = p.x, oldY = p.y;
+          var reachedTarget = this.moveParticleToIntersection(p, p.x+p.dx, p.y+p.dy);
+          var dx_dir = p.dx == 0 ? 0 : (p.dx/Math.abs(p.dx)); // Convert positive/negative dx and dy values to +/-1
+          var dy_dir = p.dy == 0 ? 0 : (p.dy/Math.abs(p.dy));
+          var q = this.getCell(p.x+dx_dir, p.y+dy_dir); // Particle (if any) in the place we're trying to move into
+          if(p.material.fluidity > 0 && q && p.material.density === q.material.density) {  // Haven't moved, but liquid sitting on liquid of same density
+            // Landed on a particle of the same density, so flow through/into it
+            var hole = this.findNextHoleInRow(p, q.x, q.y, q.y);
+            if(hole) {
+              this.moveParticleTo(p, hole.x, hole.y);
+            }
+            p.dx = 0;
+            p.dy = 0;
+          }
+          else if(!reachedTarget) {  // If not reached destination but have moved, adjust position
+            p.adjustPosition(this);
+            p.dx = 0;
+            p.dy = 0;
+          }
+          
+        }
+      }
+    }
+  };
+  
+  /*this.step = function() {
+    for(var j=this.world[0].length-1; j>=0; j--) {
+      for(var i=0; i<this.world.length; i++) {
+        
+        var p = this.getCell(i, j);
+        
+        if(p && !p.material.fixed) {
           // Update momentum
           p.dx += this.gravity.x;
           p.dy += this.gravity.y;
@@ -89,7 +149,7 @@ var ParticleEngine = function(w, h) {
         }
       }
     }
-  };
+  };*/
   
   this.addParticle = function(p, x, y) {
     x = x >= 0 ? x : p.x;
@@ -211,6 +271,33 @@ var ParticleEngine = function(w, h) {
     }
     
     return particles;
+  };
+  
+  /**
+   * Given the particle and its surrounding particles, calculate lowest friction (stickiness) value of each particle-adjacent particle pair, then choose highest friction value.
+   * Only solids contribute friction by stickiness - liquids use viscosity (-fluidity) instead.
+   * @argument {Particle} p Particle to determine frictional forces for
+   *
+   * @returns (int) Maximum frictional force exerted by surrounding particles stickiness. Scalar, not vector - always positive (or 0), and should be applied in *opposition* to any movement of the particle.
+   */
+  this.calculateStickinessForce = function(p, dir) {
+    
+    if(p.material.fluidity <= 1) {  // Only consider stickiness for solids
+      var adjacents = this.adjacentParticles(p.x, p.y, dir);  // Find any adjacent particles in one or both dimensions
+      if(adjacents.length) {
+        var maxSticky = 0;
+        for(var loop=0; loop<adjacents.length; loop++) {
+          var minSticky = Math.min(adjacents[loop].material.sticky, p.material.sticky);  // Take the minimum stickiness value between the current particle and each adjacent one (because glue doesn't stick to Teflon)
+          if(adjacents[loop].material.fluidity > 1) {
+            minSticky = 0;
+          }
+          maxSticky = minSticky > maxSticky ? minSticky : maxSticky;  // Then record the *highest* value of each of these comparisons (because running water past clay doesn't unstick it form other clay)
+        }
+        return maxSticky;
+      }
+    }
+    
+    return 0;
   };
   
   this.findNextHoleInRow = function(p, startX, startY, barrierY) {
